@@ -1,0 +1,60 @@
+# KubeVirt VM booting from an SC Series RWX raw-block DataVolume (CDI import), live-migratable.
+# Pin a CPU model all nodes offer (here a Broadwell baseline) when nodes mix CPU generations.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kv-test
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: cirros-sc
+  namespace: kv-test
+spec:
+  runStrategy: Always
+  dataVolumeTemplates:
+    - metadata:
+        name: cirros-sc-root
+      spec:
+        source:
+          http:
+            url: https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img
+        storage:
+          storageClassName: STORAGE_CLASS
+          accessModes: [ReadWriteMany]
+          volumeMode: Block
+          resources:
+            requests: {storage: 2Gi}
+  template:
+    metadata:
+      labels: {kubevirt.io/vm: cirros-sc}
+    spec:
+      evictionStrategy: LiveMigrate
+      domain:
+        cpu:
+          model: Broadwell-noTSX-IBRS
+          cores: 1
+        memory:
+          guest: 256Mi
+        devices:
+          disks:
+            - name: root
+              bootOrder: 1
+              disk: {bus: virtio}
+            - name: cloudinit
+              disk: {bus: virtio}
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: root
+          dataVolume: {name: cirros-sc-root}
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #!/bin/sh
+              echo "scseries-csp test vm booted: $(date)" > /dev/console
+              while true; do echo "heartbeat $(date +%T) $(cat /proc/uptime)" > /dev/console; sleep 10; done &

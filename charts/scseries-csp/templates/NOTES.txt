@@ -1,0 +1,16 @@
+SC Series CSP {{ .Chart.AppVersion }} installed in {{ .Release.Namespace }}.
+
+StorageClasses: {{ range .Values.storageClasses }}{{ .name }} {{ end }}
+{{- if .Values.volumeSnapshotClass.enabled }}
+VolumeSnapshotClass: {{ .Values.volumeSnapshotClass.name }}
+{{- end }}
+
+Before the first PVC:
+  1. Every Fibre Channel node that may attach volumes needs the multipath settings from
+     docs/node-requirements.md and the HPE topology label, e.g.:
+       kubectl label node <node> csi.hpe.com/zone=sc
+     then restart the HPE CSI node plugin pod on that node.
+  2. The HPE CSI Driver must run in this namespace ({{ .Release.Namespace }}){{ if not .Values.installHpeCsiDriver }} (installed separately){{ end }}.
+
+Check:  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+Leader: kubectl -n {{ .Release.Namespace }} get lease {{ include "scseries-csp.fullname" . }} -o jsonpath='{.spec.holderIdentity}'

@@ -1,0 +1,4 @@
+# Test-only overlay: let the HPE CSI node plugin run on temporarily joined, tainted test nodes.
+node:
+  tolerations:
+    - {key: scseries-test, operator: Exists, effect: NoSchedule}

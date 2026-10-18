@@ -1,0 +1,42 @@
+# RWX raw block shared by pods on two different nodes (NODE_A, NODE_B substituted by the caller).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sc-rwx2-test
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: shared, namespace: sc-rwx2-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  volumeMode: Block
+  accessModes: [ReadWriteMany]
+  resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: on-node-a, namespace: sc-rwx2-test}
+spec:
+  nodeSelector: {kubernetes.io/hostname: NODE_A}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sleep", "1d"]
+      volumeDevices: [{name: v, devicePath: /dev/xvda}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: shared}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: on-node-b, namespace: sc-rwx2-test}
+spec:
+  nodeSelector: {kubernetes.io/hostname: NODE_B}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sleep", "1d"]
+      volumeDevices: [{name: v, devicePath: /dev/xvda}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: shared}

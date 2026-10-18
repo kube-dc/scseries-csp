@@ -1,0 +1,116 @@
+{{- if not (or .Values.array.tls.fingerprint .Values.array.tls.caSecret .Values.array.tls.insecureSkipVerify) }}
+{{- fail "set array.tls.fingerprint (recommended), array.tls.caSecret or array.tls.insecureSkipVerify" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "scseries-csp.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "scseries-csp.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%v%v%v" .Values.csp .Values.array.tls .Values.monitor | sha256sum | trunc 16 }}
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "scseries-csp.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      terminationGracePeriodSeconds: 60
+      affinity:
+        {{- if .Values.affinity }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "scseries-csp.selector" . | nindent 20 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: csp
+          image: {{ include "scseries-csp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [serve]
+          env:
+            - {name: LEADER_ELECTION, value: {{ .Values.leaderElection.enabled | quote }}}
+            - {name: LEADER_ELECTION_NAME, value: {{ include "scseries-csp.fullname" . }}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - name: CSP_TOKEN_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.tokenSecret" . }}, key: token-key}}
+            - {name: CSP_TOKEN_TTL, value: {{ .Values.csp.tokenTTL | quote }}}
+            - {name: SC_PORT, value: {{ .Values.array.port | quote }}}
+            {{- with .Values.array.ssn }}
+            - {name: SC_SSN, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.array.tls.fingerprint }}
+            - {name: SC_TLS_FINGERPRINT, value: {{ . | quote }}}
+            {{- end }}
+            {{- if .Values.array.tls.caSecret }}
+            - {name: SC_CA_FILE, value: /etc/scseries-csp/ca/ca.crt}
+            {{- end }}
+            - {name: SC_TLS_INSECURE, value: {{ .Values.array.tls.insecureSkipVerify | quote }}}
+            - {name: SC_VOLUME_FOLDER, value: {{ .Values.csp.volumeFolder | quote }}}
+            - {name: SC_SERVER_FOLDER, value: {{ .Values.csp.serverFolder | quote }}}
+            - {name: SC_SERVER_OS, value: {{ .Values.csp.serverOS | quote }}}
+            - {name: SC_STORAGE_PROFILE, value: {{ .Values.csp.storageProfile | quote }}}
+            - {name: SC_DATA_REDUCTION, value: {{ .Values.csp.dataReductionProfile | quote }}}
+            - {name: SC_SNAPSHOT_PROFILE, value: {{ .Values.csp.snapshotProfile | quote }}}
+            - {name: LOG_LEVEL, value: {{ .Values.csp.logLevel | quote }}}
+            {{- if .Values.monitor.enabled }}
+            - {name: SC_MONITOR, value: "true"}
+            - {name: SC_MONITOR_INTERVAL, value: {{ .Values.monitor.interval | quote }}}
+            - name: SC_MONITOR_HOST
+              valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: backend}}
+            - name: SC_MONITOR_USER
+              valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: username}}
+            - name: SC_MONITOR_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: password}}
+            {{- end }}
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: metrics, containerPort: 9090}
+          readinessProbe:   # Ready = leader, or a standby that knows the leader (and forwards to it)
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+            failureThreshold: 1
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          {{- if .Values.array.tls.caSecret }}
+          volumeMounts:
+            - {name: ca, mountPath: /etc/scseries-csp/ca, readOnly: true}
+          {{- end }}
+      {{- if .Values.array.tls.caSecret }}
+      volumes:
+        - name: ca
+          secret: {secretName: {{ .Values.array.tls.caSecret }}}
+      {{- end }}

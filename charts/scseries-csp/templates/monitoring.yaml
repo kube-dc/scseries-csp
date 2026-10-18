@@ -1,0 +1,91 @@
+{{- if and .Values.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels: {{- include "scseries-csp.selector" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
+{{- if and .Values.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  groups:
+    - name: scseries-csp
+      rules:
+        - alert: ScseriesCSPNoLeader
+          expr: sum(scseries_csp_leader) < 1
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: No SC Series CSP replica is leader; volume provisioning and attach are failing.
+        - alert: ScseriesCSPLeaderFlapping
+          expr: sum(changes(scseries_csp_leader[30m])) > 6
+          labels: {severity: warning}
+          annotations:
+            summary: SC Series CSP leadership changed more than 6 times in 30 minutes.
+        - alert: ScseriesCSPRequestErrors
+          expr: sum by (route) (rate(scseries_csp_requests_total{code=~"5.."}[10m])) > 0.05
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: 'SC Series CSP route {{`{{ $labels.route }}`}} keeps answering 5xx.'
+        - alert: ScseriesArrayCallErrors
+          expr: sum by (object) (rate(scseries_csp_array_requests_total{code=~"5..|0"}[10m])) > 0.05
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: 'Storage Center REST calls on {{`{{ $labels.object }}`}} fail (5xx or transport errors).'
+        - alert: ScseriesArrayUnreachable
+          expr: max by (array) (scseries_array_up) == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: 'Storage Center {{`{{ $labels.array }}`}} REST API unreachable or failing.'
+        - alert: ScseriesArrayDegraded
+          expr: max by (array, name, status) (scseries_array_status{status!="Up"}) == 1
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: 'Storage Center {{`{{ $labels.name }}`}} status is {{`{{ $labels.status }}`}}.'
+        - alert: ScseriesArrayUnhealthyDisks
+          expr: sum by (array, class) (scseries_array_disks{state="unhealthy"}) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: '{{`{{ $value }}`}} unhealthy {{`{{ $labels.class }}`}} disk(s) on {{`{{ $labels.array }}`}}.'
+        - alert: ScseriesArrayNoSpares
+          expr: (sum by (array, class) (scseries_array_disks) > 0) unless (sum by (array, class) (scseries_array_disks{state="spare"}) > 0)
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: 'No spare {{`{{ $labels.class }}`}} disk on {{`{{ $labels.array }}`}}.'
+        - alert: ScseriesArrayCriticalAlerts
+          expr: sum by (array) (scseries_array_active_alerts{severity=~"Critical|Emergency|Down"}) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: '{{`{{ $value }}`}} unacknowledged critical alert(s) on Storage Center {{`{{ $labels.array }}`}}.'
+        - alert: ScseriesArrayFreeSpaceLow
+          expr: max by (array) (scseries_array_capacity_bytes{kind="free"}) / max by (array) (scseries_array_capacity_bytes{kind="available"}) < {{ .Values.prometheusRule.freeSpaceWarningRatio }}
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: 'Storage Center {{`{{ $labels.array }}`}} has less than {{ mul .Values.prometheusRule.freeSpaceWarningRatio 100 }}% free space.'
+        - alert: ScseriesArrayPollStale
+          expr: time() - max by (array) (scseries_array_last_poll_timestamp_seconds) > 600
+          labels: {severity: warning}
+          annotations:
+            summary: 'No successful health poll of {{`{{ $labels.array }}`}} for 10 minutes.'
+{{- end }}

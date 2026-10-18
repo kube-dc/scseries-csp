@@ -1,0 +1,13 @@
+# credentials and site-specific material - never commit
+.env
+.env/
+private/
+*.site.yaml
+values-site*.yaml
+# build output
+dist/
+charts/*/charts/*.tgz
+# tooling
+__pycache__/
+.claude/
+*.pyc

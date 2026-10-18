@@ -1,0 +1,47 @@
+{{- if .Values.leaderElection.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-leader-election
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-leader-election
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "scseries-csp.fullname" . }}-leader-election}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "scseries-csp.fullname" . }}, namespace: {{ .Release.Namespace }}}
+{{- end }}
+{{- if .Values.audit.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-audit
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes, nodes]
+    verbs: [list]
+  - apiGroups: [storage.k8s.io]
+    resources: [volumeattachments]
+    verbs: [list]
+  - apiGroups: [storage.hpe.com]
+    resources: [hpenodeinfos]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-audit
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ include "scseries-csp.fullname" . }}-audit}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "scseries-csp.fullname" . }}, namespace: {{ .Release.Namespace }}}
+{{- end }}

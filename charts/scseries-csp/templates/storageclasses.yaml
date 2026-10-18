@@ -1,0 +1,30 @@
+{{- $secret := include "scseries-csp.backendSecret" . }}
+{{- range .Values.storageClasses }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .name }}
+  labels: {{- include "scseries-csp.labels" $ | nindent 4 }}
+  {{- if .isDefault }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  {{- end }}
+provisioner: csi.hpe.com
+parameters:
+  accessProtocol: fc
+  csi.storage.k8s.io/fstype: {{ .fsType | default "xfs" }}
+  {{- range $k := list "provisioner" "controller-publish" "node-stage" "node-publish" "controller-expand" }}
+  csi.storage.k8s.io/{{ $k }}-secret-name: {{ $secret }}
+  csi.storage.k8s.io/{{ $k }}-secret-namespace: {{ $.Release.Namespace }}
+  {{- end }}
+  {{- range $k, $v := .parameters }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+reclaimPolicy: {{ .reclaimPolicy | default "Delete" }}
+allowVolumeExpansion: {{ .allowVolumeExpansion | default true }}
+volumeBindingMode: {{ .volumeBindingMode | default "WaitForFirstConsumer" }}
+{{- with .allowedTopologies }}
+allowedTopologies: {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}

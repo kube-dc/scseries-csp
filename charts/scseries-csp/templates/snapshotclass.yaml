@@ -1,0 +1,16 @@
+{{- if and .Values.volumeSnapshotClass.enabled (.Capabilities.APIVersions.Has "snapshot.storage.k8s.io/v1") }}
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ .Values.volumeSnapshotClass.name }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+  {{- if .Values.volumeSnapshotClass.isDefault }}
+  annotations:
+    snapshot.storage.kubernetes.io/is-default-class: "true"
+  {{- end }}
+driver: csi.hpe.com
+deletionPolicy: {{ .Values.volumeSnapshotClass.deletionPolicy }}
+parameters:
+  csi.storage.k8s.io/snapshotter-secret-name: {{ include "scseries-csp.backendSecret" . }}
+  csi.storage.k8s.io/snapshotter-secret-namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,12 @@
+scseries-csp
+Copyright 2026 The scseries-csp Authors
+Developed by the Kube-DC team (https://kube-dc.com).
+
+This product implements the HPE CSI Driver Container Storage Provider API
+(https://github.com/hpe-storage/container-storage-provider, Apache-2.0).
+The Helm chart can install the HPE CSI Driver for Kubernetes
+(https://github.com/hpe-storage/co-deployments, Apache-2.0) as a dependency.
+
+Dell, Compellent and Storage Center are trademarks of Dell Inc. or its
+subsidiaries. HPE is a trademark of Hewlett Packard Enterprise. This project is
+not affiliated with or endorsed by either company.

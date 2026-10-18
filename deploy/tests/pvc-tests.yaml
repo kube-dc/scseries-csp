@@ -1,0 +1,62 @@
+# CSI smoke tests (STORAGE_CLASS is substituted by hack/csi-e2e.sh).
+# 1) RWO filesystem PVC + writer pod   2) RWX raw block PVC + two pods sharing it
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sc-csi-test
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: fs-rwo, namespace: sc-csi-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: fs-writer, namespace: sc-csi-test}
+spec:
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sh", "-c", "date >> /data/stamps && sync && cat /data/stamps && df -h /data && sleep 1d"]
+      volumeMounts: [{name: v, mountPath: /data}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: fs-rwo}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: block-rwx, namespace: sc-csi-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  volumeMode: Block
+  accessModes: [ReadWriteMany]
+  resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: block-a, namespace: sc-csi-test}
+spec:
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sh", "-c", "echo hello-from-block-a | dd of=/dev/xvda bs=512 count=1 conv=sync,fsync && sleep 1d"]
+      volumeDevices: [{name: v, devicePath: /dev/xvda}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: block-rwx}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: block-b, namespace: sc-csi-test}
+spec:
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sh", "-c", "sleep 15; dd if=/dev/xvda bs=512 count=1 2>/dev/null | head -c 19; echo; sleep 1d"]
+      volumeDevices: [{name: v, devicePath: /dev/xvda}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: block-rwx}

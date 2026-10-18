@@ -1,0 +1,30 @@
+# kube-dc platform profile. Combine with a site file holding array.host, array.tls.fingerprint and credentials:
+#   helm upgrade --install scseries-csp charts/scseries-csp -n hpe-storage --create-namespace \
+#     -f charts/scseries-csp/values-kube-dc.yaml -f my-site.yaml
+csp:
+  volumeFolder: kube-dc
+  serverFolder: kube-dc
+
+storageClasses:
+  - name: scseries-block
+    isDefault: false
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    fsType: xfs
+    parameters:
+      description: "kube-dc PVC {pvc} in {namespace}"
+    allowedTopologies:
+      - matchLabelExpressions:
+          - {key: csi.hpe.com/zone, values: [sc]}
+
+cdi:
+  storageProfiles:
+    enabled: true          # KubeVirt VMs on these classes get RWX raw block DataVolumes (live-migratable)
+
+serviceMonitor:
+  enabled: true
+prometheusRule:
+  enabled: true
+audit:
+  enabled: true

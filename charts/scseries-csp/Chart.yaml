@@ -1,0 +1,15 @@
+apiVersion: v2
+name: scseries-csp
+description: Dell SC Series (Compellent) storage for Kubernetes via the HPE CSI Driver - Fibre Channel block volumes, RWX raw block for KubeVirt live migration, snapshots and clones.
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
+home: https://github.com/kube-dc/scseries-csp
+sources: [https://github.com/kube-dc/scseries-csp]
+keywords: [csi, storage, dell, compellent, sc-series, fibre-channel, kubevirt, hpe-csi]
+dependencies:
+  - name: hpe-csi-driver
+    alias: hpeCsiDriver
+    version: 3.3.0
+    repository: https://hpe-storage.github.io/co-deployments
+    condition: installHpeCsiDriver

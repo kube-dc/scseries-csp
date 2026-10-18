@@ -1,0 +1,51 @@
+# Step 2 of the snapshot test (after the writer pod wrote ORIGINAL and the marker was changed to CHANGED).
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata: {name: src-snap, namespace: sc-snap-test}
+spec:
+  volumeSnapshotClassName: SNAPSHOT_CLASS
+  source: {persistentVolumeClaimName: src}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: restored, namespace: sc-snap-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+  dataSource: {name: src-snap, kind: VolumeSnapshot, apiGroup: snapshot.storage.k8s.io}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: cloned, namespace: sc-snap-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 2Gi}}
+  dataSource: {name: src, kind: PersistentVolumeClaim}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: reader-restored, namespace: sc-snap-test}
+spec:
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sh", "-c", "cat /data/marker; df -h /data | tail -1; sleep 1d"]
+      volumeMounts: [{name: v, mountPath: /data}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: restored}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: reader-cloned, namespace: sc-snap-test}
+spec:
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command: ["sh", "-c", "cat /data/marker; df -h /data | tail -1; sleep 1d"]
+      volumeMounts: [{name: v, mountPath: /data}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: cloned}

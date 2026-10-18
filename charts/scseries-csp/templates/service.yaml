@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scseries-csp.serviceName" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "scseries-csp.selector" . | nindent 4 }}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+    - {name: metrics, port: 9090, targetPort: metrics}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "scseries-csp.selector" . | nindent 6 }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# Only the HPE CSI controller (and CSP standbys forwarding to the leader) may call the CSP API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "scseries-csp.selector" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: hpe-csi-controller}
+        - podSelector:
+            matchLabels: {{- include "scseries-csp.selector" . | nindent 14 }}
+      ports:
+        - {port: 8080, protocol: TCP}
+    - ports:
+        - {port: 9090, protocol: TCP}
+{{- end }}

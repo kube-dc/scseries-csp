@@ -1,0 +1,109 @@
+# Default values for scseries-csp. See values-kube-dc.yaml for a complete platform profile.
+
+image:
+  repository: ghcr.io/kube-dc/scseries-csp
+  tag: ""                # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 2          # leader election: one leader changes the array, standbys forward to it
+leaderElection:
+  enabled: true
+
+# Storage Center (or DSM Data Collector) the HPE CSI Driver will reach through this CSP.
+array:
+  host: ""               # REST endpoint address (required)
+  port: 3033
+  ssn: ""                # serial number; only needed when a DSM manages several Storage Centers
+  tls:
+    # SHA-256 fingerprint(s) of the array's REST certificate, comma-separated. Storage Centers use
+    # self-signed certificates, so pinning is the recommended trust mode:
+    #   openssl s_client -connect <host>:3033 </dev/null | openssl x509 -noout -fingerprint -sha256
+    fingerprint: ""
+    caSecret: ""         # alternative: Secret with key ca.crt
+    insecureSkipVerify: false
+  credentials:
+    # Secret with keys serviceName, servicePort, backend, username, password (HPE CSI backend Secret).
+    # Leave empty to have the chart create it from username/password below.
+    existingSecret: ""
+    username: ""
+    password: ""
+
+csp:
+  volumeFolder: scseries-csp   # SC volume folder owned by the CSP (created on first use)
+  serverFolder: scseries-csp   # SC server folder owned by the CSP (created on first use)
+  serverOS: "Red Hat Linux 7.x"
+  storageProfile: ""           # default for volumes; "" = array default
+  dataReductionProfile: ""     # "" = array default
+  snapshotProfile: ""          # "" = no snapshot schedule (CSI manages snapshots); "array-default" keeps the array's
+  logLevel: info
+  tokenTTL: 24h
+  tokenKey:
+    existingSecret: ""         # Secret with key token-key (base64 of 32 bytes); otherwise generated once and kept
+
+monitor:                       # array health metrics (status, disks, alerts, capacity), polled by the leader
+  enabled: true
+  interval: 60s
+
+storageClasses:
+  - name: scseries-fc
+    isDefault: false
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    fsType: xfs
+    parameters: {}             # storageProfile, dataReductionProfile, snapshotProfile, description
+    allowedTopologies: []      # e.g. [{matchLabelExpressions: [{key: csi.hpe.com/zone, values: [sc]}]}]
+
+volumeSnapshotClass:
+  enabled: true                # created only if the snapshot.storage.k8s.io/v1 API exists
+  name: scseries-snap
+  isDefault: false
+  deletionPolicy: Delete
+
+cdi:
+  storageProfiles:
+    enabled: false             # KubeVirt CDI: default DataVolumes on these classes to RWX raw block (migratable)
+
+networkPolicy:
+  enabled: true
+podDisruptionBudget:
+  enabled: true
+
+serviceMonitor:
+  enabled: false               # needs the Prometheus Operator CRDs
+  interval: 30s
+  labels: {}
+prometheusRule:
+  enabled: false
+  labels: {}
+  freeSpaceWarningRatio: 0.15
+
+audit:
+  enabled: false               # periodic read-only consistency report (Job fails on findings)
+  schedule: "17 * * * *"
+  fix: ""                      # e.g. "stale-mapping" to repair automatically
+
+resources:
+  requests: {cpu: 20m, memory: 32Mi}
+  limits: {memory: 128Mi}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+# HPE CSI Driver (pinned dependency). Set false when it is installed separately (same namespace).
+installHpeCsiDriver: true
+hpeCsiDriver:
+  disable:
+    nimble: true
+    primera: true
+    alletra6000: true
+    alletra9000: true
+    alletraStorageMP: true
+    b10000FileService: true
+    x10000FileService: true
+  disableNodeConformance: true     # do not install packages on nodes
+  disableNodeConfiguration: true   # do not rewrite /etc/multipath.conf (see docs/node-requirements.md)
+  disableNodeMonitor: true         # never "clean up" multipath devices of other arrays
+  disableHostDeletion: true

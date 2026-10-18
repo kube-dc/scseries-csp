@@ -1,0 +1,53 @@
+{{- if and .Values.cdi.storageProfiles.enabled (.Capabilities.APIVersions.Has "cdi.kubevirt.io/v1beta1") }}
+# KubeVirt/CDI: DataVolumes on these classes default to RWX raw block, which live migration needs.
+# CDI creates a StorageProfile per StorageClass itself, so a hook Job patches it after install/upgrade.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-cdi
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [cdi.kubevirt.io]
+    resources: [storageprofiles]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-cdi
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ include "scseries-csp.fullname" . }}-cdi}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "scseries-csp.fullname" . }}, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-cdi-profiles
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: {{- include "scseries-csp.selector" . | nindent 8 }}
+        app.kubernetes.io/component: cdi-profiles
+    spec:
+      serviceAccountName: {{ include "scseries-csp.fullname" . }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: cdi-profiles
+          image: {{ include "scseries-csp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [cdi-profiles, --classes, {{ $names := list }}{{ range .Values.storageClasses }}{{ $names = append $names .name }}{{ end }}{{ join "," $names | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+{{- end }}

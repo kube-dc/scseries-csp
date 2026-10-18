@@ -1,0 +1,45 @@
+# Continuous direct-I/O writer for failover tests. Logs a heartbeat every 100 writes and every write that
+# fails or takes >= 2 s, so path loss / restarts show up as gaps or errors in `kubectl logs`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sc-fail-test
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: io, namespace: sc-fail-test}
+spec:
+  storageClassName: STORAGE_CLASS
+  volumeMode: Block
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: io, namespace: sc-fail-test}
+spec:
+  terminationGracePeriodSeconds: 5
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37.0
+      command:
+        - sh
+        - -c
+        - |
+          i=0; ok=0; err=0
+          while true; do
+            s=$(date +%s)
+            if dd if=/dev/zero of=/dev/xvda bs=1M count=4 seek=$(( (i % 400) * 4 )) oflag=direct conv=fsync 2>/dev/null; then
+              ok=$((ok+1)); r=ok
+            else
+              err=$((err+1)); r=ERR
+            fi
+            d=$(( $(date +%s) - s ))
+            if [ "$r" = ERR ] || [ "$d" -ge 2 ]; then echo "$(date +%T) write $i $r took ${d}s"; fi
+            if [ $((i % 100)) -eq 0 ]; then echo "$(date +%T) heartbeat i=$i ok=$ok err=$err"; fi
+            i=$((i+1)); sleep 0.2
+          done
+      volumeDevices: [{name: v, devicePath: /dev/xvda}]
+  volumes:
+    - name: v
+      persistentVolumeClaim: {claimName: io}

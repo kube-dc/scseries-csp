@@ -1,0 +1,50 @@
+{{- if .Values.audit.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "scseries-csp.fullname" . }}-audit
+  labels: {{- include "scseries-csp.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.audit.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels: {{- include "scseries-csp.selector" . | nindent 12 }}
+            app.kubernetes.io/component: audit
+        spec:
+          serviceAccountName: {{ include "scseries-csp.fullname" . }}
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: audit
+              image: {{ include "scseries-csp.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: [audit{{ with .Values.audit.fix }}, --fix, {{ . | quote }}{{ end }}]
+              env:
+                - name: SC_HOST
+                  valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: backend}}
+                - name: CSP_SC_USER
+                  valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: username}}
+                - name: CSP_SC_PASSWORD
+                  valueFrom: {secretKeyRef: {name: {{ include "scseries-csp.backendSecret" . }}, key: password}}
+                - {name: SC_PORT, value: {{ .Values.array.port | quote }}}
+                {{- with .Values.array.tls.fingerprint }}
+                - {name: SC_TLS_FINGERPRINT, value: {{ . | quote }}}
+                {{- end }}
+                - {name: SC_TLS_INSECURE, value: {{ .Values.array.tls.insecureSkipVerify | quote }}}
+                - {name: SC_VOLUME_FOLDER, value: {{ .Values.csp.volumeFolder | quote }}}
+                - {name: SC_SERVER_FOLDER, value: {{ .Values.csp.serverFolder | quote }}}
+              resources: {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+{{- end }}
