@@ -42,8 +42,8 @@ Other SC Series models and SCOS 7.x releases use the same REST API and should wo
 Prerequisites: FC zoning between the nodes and the array, nodes prepared as in [docs/node-requirements.md](docs/node-requirements.md), and an array account as in [docs/array-setup.md](docs/array-setup.md).
 
 ```bash
-helm dependency update charts/scseries-csp
-helm upgrade --install scseries-csp charts/scseries-csp -n hpe-storage --create-namespace \
+helm upgrade --install scseries-csp oci://ghcr.io/kube-dc/charts/scseries-csp --version 0.3.0 \
+  -n hpe-storage --create-namespace \
   --set array.host=sc.example.com \
   --set array.credentials.username=scseries-csp \
   --set array.credentials.password='...' \

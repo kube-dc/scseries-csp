@@ -13,8 +13,9 @@
 Site specifics (array address, certificate pin, credentials via `existingSecret`, storage profiles per tier) belong in a separate values file that is not committed:
 
 ```bash
-helm upgrade --install scseries-csp charts/scseries-csp -n hpe-storage --create-namespace \
-  -f charts/scseries-csp/values-kube-dc.yaml -f site.yaml
+helm pull oci://ghcr.io/kube-dc/charts/scseries-csp --version 0.3.0 --untar   # for values-kube-dc.yaml
+helm upgrade --install scseries-csp oci://ghcr.io/kube-dc/charts/scseries-csp --version 0.3.0 \
+  -n hpe-storage --create-namespace -f scseries-csp/values-kube-dc.yaml -f site.yaml
 ```
 
 Node preparation (multipath drop-ins, containerd device ownership, inotify, the zone label) belongs in the node image or provisioning; see [node-requirements.md](node-requirements.md).

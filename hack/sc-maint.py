@@ -8,6 +8,8 @@
   wipe-volumes [--match RE] [--yes]  unmap and PERMANENTLY delete volumes (dry run without --yes)
   wipe-servers [--match RE] [--yes]  delete server objects with no mapped volumes (dry run without --yes)
   remove-hbas --match RE [--yes]   detach HBAs from physical server objects
+  adopt-servers --match RE [--folder F] [--yes]
+                                 move undeletable server objects (vVol-pinned ESXi hosts) into the CSP folder
   csp-user [--user U] [--folder F] [--reset-password]
                                  VolumeManager user + user group (CSP folders) for the CSP, write .env/csp.env
 """
@@ -191,6 +193,29 @@ def cmd_remove_hbas(sc, a):
                 print(f"  FAILED {h.get('instanceName')} from {s['name']}: {str(e)[:220]}")
 
 
+def cmd_adopt_servers(sc, a):
+    """Move server objects that cannot be deleted (e.g. ESXi hosts pinned by vVol protocol-endpoint bindings)
+    out of their cluster into the CSP server folder, so the CSP reuses them and can add the node's other HBAs.
+    Dry run unless --yes."""
+    folder = next((f["instanceId"] for f in sc.getlist("ScServerFolder", scSerialNumber=sc.ssn) if f.get("name") == a.folder), None)
+    if folder is None:
+        sys.exit(f"server folder {a.folder} not found (the CSP creates it on first use, or run csp-user)")
+    for s in sc.getlist("ScPhysicalServer", scSerialNumber=sc.ssn):
+        if not re.search(a.match, s.get("name", "")) or s.get("serverFolder", {}).get("instanceName") == a.folder:
+            continue
+        sid, parent = s["instanceId"], name(s.get("parent")) if s.get("parent") else ""
+        if not a.yes:
+            print(f"  would adopt {s['name']} (cluster {parent or '-'}, folder {name(s.get('serverFolder'))}) into {a.folder}")
+            continue
+        try:
+            if parent:
+                sc.post(f"StorageCenter/ScPhysicalServer/{sid}/RemoveFromCluster", {})
+            sc.call("PUT", f"StorageCenter/ScPhysicalServer/{sid}", {"ServerFolder": folder})
+            print(f"  adopted {s['name']} into {a.folder}" + (f" (removed from {parent})" if parent else ""))
+        except RuntimeError as e:
+            print(f"  FAILED {s['name']}: {str(e)[:220]}")
+
+
 def _folder(sc, obj, folder):
     found = [f for f in sc.getlist(obj, scSerialNumber=sc.ssn) if f.get("name") == folder]
     if found:
@@ -329,13 +354,17 @@ def main():
     r = sub.add_parser("remove-hbas")
     r.add_argument("--match", required=True, help="regex on server name")
     r.add_argument("--yes", action="store_true")
+    o = sub.add_parser("adopt-servers")
+    o.add_argument("--match", required=True, help="regex on server name")
+    o.add_argument("--folder", default="scseries-csp", help="CSP server folder")
+    o.add_argument("--yes", action="store_true")
     a = p.parse_args()
     sc = _probe.SC()
     sc.login()
     try:
         {"status": cmd_status, "rebalance": cmd_rebalance, "ack": cmd_ack, "hardware": cmd_hardware,
          "wipe-volumes": cmd_wipe_volumes, "wipe-servers": cmd_wipe_servers,
-         "remove-hbas": cmd_remove_hbas, "csp-user": cmd_csp_user}[a.cmd](sc, a)
+         "remove-hbas": cmd_remove_hbas, "adopt-servers": cmd_adopt_servers, "csp-user": cmd_csp_user}[a.cmd](sc, a)
     finally:
         sc.logout()
 

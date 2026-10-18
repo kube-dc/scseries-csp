@@ -41,5 +41,26 @@ With a DSM Data Collector in front of the array, a Volume Manager account limite
 
 - If a node's HBAs still belong to a server object outside the CSP folder (e.g. an ESXi host or cluster), the CSP skips those ports.
 - Detach them first: `hack/sc-maint.py remove-hbas --match '<server>' --yes`.
-- Storage Center refuses to remove the last HBA of a server while vVol bindings exist ("SCSISubMapZones"). Such bindings can only be released by vCenter/VASA or Dell support. Until then the node runs on the remaining ports (single path).
 - Volumes still mapped to the legacy object stay visible on the node. Unmap them, or make sure the node's multipath configuration does not claim them (see node requirements).
+
+### Hosts pinned by vVol bindings
+
+If vCenter disappeared while vVols were still bound, Storage Center keeps "SubMapZones" (vVol bindings through the protocol endpoint, LUN 256) on each ESXi server object.
+
+What the public REST API cannot do (verified on SCOS 7.2):
+- delete the vVols ("SubMapZone"), the protocol-endpoint mappings ("Access Denied"), the server, or its last HBA ("Cannot delete last remote personality while SCSISubMapZones exist");
+- change the server's OS type ("Cannot delete ALU profile");
+- read `ScProtocolEndpoint`, even as Admin ("is not public").
+
+Only the VASA provider in a DSM Data Collector, or Dell support, can release the bindings.
+
+What does work:
+- expiring the vVols' snapshots and clearing their snapshot schedules (stops space growth);
+- **adopting** the server objects. They leave their cluster and move into the CSP server folder; an emptied cluster is removed by the array:
+  ```bash
+  python3 -I hack/sc-maint.py adopt-servers --match '<esxi-name-regex>' --folder <csp-folder>          # dry run
+  python3 -I hack/sc-maint.py adopt-servers --match '<esxi-name-regex>' --folder <csp-folder> --yes
+  ```
+  When the node registers, the CSP reuses the object (matched by WWPN), adds the node's other HBAs and maps volumes as usual. The leftover protocol endpoint stays mapped; node multipath ignores it because the WWID exception excludes protocol endpoints.
+  The object keeps the VMware ESXi OS type. Verify I/O and multipath on the first adopted node.
+  Until each node registers, `scseries-csp audit` reports the adopted objects as `stale-server`; `--fix stale-server` cannot delete them, because they are still mapped.
